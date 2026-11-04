@@ -12,23 +12,37 @@ Visit the official [Android developer documentation website](https://developer.a
 
 ## Android Architecture
 
-Android is a Linux-based open source platform developed by Google, which serves as a mobile operating system (OS). Today the platform is the foundation for a wide variety of modern technology, such as mobile phones, tablets, wearable tech, TVs, and other "smart" devices. Typical Android builds ship with a range of pre-installed ("stock") apps and support installation of third-party apps through the Google Play store and other marketplaces.
+[Android](https://en.wikipedia.org/wiki/Android_(operating_system) "Android (Operating System)") is a Linux-based open source platform developed by the [Open Handset Alliance](https://www.openhandsetalliance.com/) (a consortium lead by Google), which serves as a mobile operating system (OS). Today the platform is the foundation for a wide variety of modern technology, such as mobile phones, tablets, wearable tech, TVs, and other smart devices. Typical Android builds ship with a range of pre-installed ("stock") apps and support installation of third-party apps through the Google Play store and other marketplaces.
 
 Android's software stack is composed of several different layers. Each layer defines interfaces and offers specific services.
 
-![OWASP MSTG](Images/Chapters/0x05a/android_software_stack.png) \
+<img src="Images/Chapters/0x05a/android_software_stack.png" width="400px" />
 
-At the lowest level, Android is based on a variation of the Linux Kernel. On top of the kernel, the Hardware Abstraction Layer (HAL) defines a standard interface for interacting with built-in hardware components. Several HAL implementations are packaged into shared library modules that the Android system calls when required. This is the basis for allowing applications to interact with the device's hardware. For example, it allows a stock phone application to use a device's microphone and speaker.
+**Kernel:** At the lowest level, Android is based on a [variation of the Linux Kernel](https://source.android.com/devices/architecture/kernel) containing some significant additions, including [Low Memory Killer](https://source.android.com/devices/tech/perf/lmkd), wake locks, the [Binder IPC](https://source.android.com/devices/architecture/hidl/binder-ipc) driver, etc. For the purpose of the MASTG, we'll focus on the user-mode part of the OS, where Android significantly differs from a typical Linux distribution. The two most important components for us are the managed runtime used by applications (ART/Dalvik) and [Bionic](https://en.wikipedia.org/wiki/Bionic_(software) "Android (Bionic)"), Android's version of glibc, the GNU C library.
 
-Android apps are usually written in Java and compiled to Dalvik bytecode, which is somewhat different from the traditional Java bytecode. Dalvik bytecode is created by first compiling the Java code to .class files, then converting the JVM bytecode to the Dalvik .dex format with the `d8` tool.
+**HAL:** On top of the kernel, the Hardware Abstraction Layer (HAL) defines a standard interface for interacting with built-in hardware components. Several HAL implementations are packaged into shared library modules that the Android system calls when required. This is the basis for allowing applications to interact with the device's hardware. For example, it allows a stock phone application to use a device's microphone and speaker.
 
-![OWASP MSTG](Images/Chapters/0x05a/java_vs_dalvik.png) \
+**Runtime Environment:** Android apps are written in Java and Kotlin and then compiled to [Dalvik bytecode](https://source.android.com/devices/tech/dalvik/dalvik-bytecode) which can be then executed using a runtime that interprets the bytecode instructions and executes them on the target device. For Android, this is the [Android Runtime (ART)](https://source.android.com/devices/tech/dalvik/configure#how_art_works). This is similar to the [JVM (Java Virtual Machine)](https://en.wikipedia.org/wiki/Java_virtual_machine) for Java applications, or the Mono Runtime for .NET applications.
 
-The current version of Android executes this bytecode on the Android runtime (ART). ART is the successor to Android's original runtime, the Dalvik Virtual Machine (DVM). The key difference between Dalvik and ART is the way the bytecode is executed.
+Dalvik bytecode is an optimized version of Java bytecode. It is created by first compiling the Java or Kotlin code to Java bytecode, using the javac and kotlinc compilers respectively, producing .class files. Finally, the Java bytecode is converted to Dalvik bytecode using the d8 tool. Dalvik bytecode is packed within APK and AAB files in the form of .dex files and is used by a managed runtime on Android to execute it on the device.
 
-In the DVM, bytecode is translated into machine code at execution time, a process known as *just-in-time* (JIT) compilation. This enables the runtime to benefit from the speed of compiled code while maintaining the flexibility of code interpretation. To further improve performance, Android introduced the [Android Runtime (ART)](https://source.android.com/devices/tech/dalvik/configure#how_art_works) to replace the DVM. ART uses a hybrid combination of *ahead-of-time* (AOT), JIT and profile-guided compilation. Apps are recompiled on the device when they are installed, or when the OS undergoes a major update. While the code is being recompiled, device-specific and advanced code optimizations techniques can be applied. The final recompiled code is then used for all subsequent executions. AOT improves performance by a factor of two while reducing power consumption, due to the device-specific optimizations.
+<img src="Images/Chapters/0x05a/java_vs_dalvik.png" width="400px" />
 
-Android apps don't have direct access to hardware resources, and each app runs in its own virtual machine or sandbox. This enables the OS to have precise control over resources and memory access on the device. For instance, a crashing app doesn't affect other apps running on the same device. Android controls the maximum number of system resources allocated to apps, preventing any one app from monopolizing too many resources. At the same time, this sandbox design can be considered as one of the many principles in Android's global defense-in-depth strategy. A malicious third-party application, with low privileges, shouldn't be able to escape its own runtime and read the memory of a victim application on the same device. In the following section we take a closer look at the different defense layers in the Android operating system.
+Before Android 5.0 (API level 21), Android executed bytecode on the Dalvik Virtual Machine (DVM), where it was translated into machine code at execution time, a process known as _just-in-time_ (JIT) compilation. This enables the runtime to benefit from the speed of compiled code while maintaining the flexibility of code interpretation.
+
+Since Android 5.0 (API level 21), Android executes bytecode on the Android Runtime (ART) which is the successor of the DVM. ART provides improved performance as well as context information in app native crash reports, by including both Java and native stack information. It uses the same Dalvik bytecode input to maintain backward compatibility. However, ART executes the Dalvik bytecode differently, using a hybrid combination of _ahead-of-time_ (AOT), _just-in-time_ (JIT) and profile-guided compilation.
+
+- **AOT** pre-compiles Dalvik bytecode into native code, and the generated code will be saved on disk with the .oat extension (ELF binary). The dex2oat tool can be used to perform the compilation and can be found at /system/bin/dex2oat on Android devices. AOT compilation is executed during the installation of the app. This makes the application start faster, as no compilation is needed anymore. However, this also means that the install time increases as compared to JIT compilation. Additionally, since applications are always optimized against the current version of the OS, this means that software updates will recompile all previously compiled applications, resulting in a significant increase in the system update time. Finally, AOT compilation will compile the entire application, even if certain parts are never used by the user.
+- **JIT** happens at runtime.
+- **Profile-guided compilation** is a hybrid approach that was introduced in Android 7 (API level 24) to combat the downsides of AOT. At first, the application will use JIT compilation, and Android keeps track of all the parts of the application that are frequently used. This information is stored in an application profile and when the device is idle, a compilation (dex2oat) daemon runs which AOT compiles the identified frequent code paths from the profile.
+
+<img src="Images/Chapters/0x05a/java2oat.png" width="100%" />
+
+Source: <https://lief-project.github.io/doc/latest/tutorials/10_android_formats.html>
+
+**Sandboxing:** Android apps don't have direct access to hardware resources, and each app runs in its own virtual machine or sandbox. This enables the OS to have precise control over resources and memory access on the device. For instance, a crashing app doesn't affect other apps running on the same device. Android controls the maximum number of system resources allocated to apps, preventing any one app from monopolizing too many resources. At the same time, this sandbox design can be considered as one of the many principles in Android's global defense-in-depth strategy. A malicious third-party application, with low privileges, shouldn't be able to escape its own runtime and read the memory of a victim application on the same device. In the following section we take a closer look at the different defense layers in the Android operating system. Learn more in the section ["Software Isolation"](#software-isolation).
+
+You can find more detailed information in the Google Source article ["Android Runtime (ART)"](https://source.android.com/devices/tech/dalvik/configure#how_art_works), the [book "Android Internals" by Jonathan Levin](http://newandroidbook.com/) and the [blog post "Android 101" by @_qaz_qaz](https://secrary.com/android-reversing/android101/).
 
 ## Android Security: Defense-in-Depth Approach
 
@@ -49,9 +63,9 @@ Android supports device encryption from Android 2.3.4 (API level 10) and it has 
 
 - [File-Based Encryption (FBE)](https://source.android.com/security/encryption/file-based "File-Based Encryption"): Android 7.0 (API level 24) supports file-based encryption. File-based encryption allows different files to be encrypted with different keys so they can be deciphered independently. Devices that support this type of encryption support Direct Boot as well. Direct Boot enables the device to have access to features such as alarms or accessibility services even if the user didn't unlock the device.
 
-> Note: you might hear of [Adiantum](https://github.com/google/adiantum "Adiantum"), which is an encryption method designed for devices running Android 9 (API level 28) and higher whose CPUs lack AES instructions. **Adiantum is only relevant for ROM developers or device vendors**, Android does not provide an API for developers to use Adiantum from applications. As recommended by Google, Adiantum should not be used when shipping ARM-based devices with ARMv8 Cryptography Extensions or x86-based devices with AES-NI. AES is faster on those platforms.
->
->Further information is available in the [Android documentation](https://source.android.com/security/encryption/adiantum "Adiantum").
+!!! note
+    You might hear of [Adiantum](https://github.com/google/adiantum "Adiantum"), an encryption method designed for devices running Android 9 (API level 28) or higher whose CPUs lack AES instructions. **Adiantum is only relevant for ROM developers or device vendors**, Android does not provide an API for developers to use Adiantum from applications. As recommended by Google, Adiantum should not be used when shipping ARM-based devices with ARMv8 Cryptography Extensions or x86-based devices with AES-NI. AES is faster on those platforms.
+    Further information is available in the [Android documentation](https://source.android.com/security/encryption/adiantum "Adiantum").
 
 #### Trusted Execution Environment (TEE)
 
@@ -67,9 +81,17 @@ Android offers a trusted execution environment in dedicated hardware to solve th
 
 #### Verified Boot
 
-We need to have a way to ensure that code that is being executed on Android devices comes from a trusted source and that its integrity is not compromised. In order to achieve this, Android introduced the concept of verified boot. The goal of verified boot is to establish a trust relationship between the hardware and the actual code that executes on this hardware. During the verified boot sequence, a full chain of trust is established starting from the hardware-protected Root-of-Trust (RoT) up until the final system that is running, passing through and verifying all the required boot phases. When the Android system is finally booted you can rest assure that the system is not tampered with. You have cryptographic proof that the code which is running is the one that is intended by the OEM and not one that has been maliciously or accidentally altered.
+We need to have a way to ensure that code that is being executed on Android devices comes from a trusted source and that its integrity is not compromised. In order to achieve this, Android introduced the concept of verified boot. The goal of verified boot is to establish a trust relationship between the hardware and the actual code that executes on this hardware. During the verified boot sequence, a full chain of trust is established starting from the hardware-protected Root-of-Trust (RoT) up until the final system that is running, passing through and verifying all the required boot phases. When the Android system is finally booted you can rest assured that the system is not tampered with. You have cryptographic proof that the code which is running is the one that is intended by the OEM and not one that has been maliciously or accidentally altered.
 
 Further information is available in the [Android documentation](https://source.android.com/security/verifiedboot).
+
+#### Android Enterprise
+
+[Android Enterprise](https://developer.android.com/work) (formerly Android for Work) is a set of features and services designed for corporate and organizational use, providing enhanced security, privacy, and management capabilities beyond standard Android. It enables organizations to securely deploy and manage Android devices and apps through features like work profiles, which create a separate, encrypted container for work apps and data that's isolated from personal apps.
+
+Key security features include mandatory encryption, enhanced device administration controls, always-on VPN, and stricter security policies that can be enforced by an enterprise mobility management (EMM) solution. Newly added enhancements and updates to recent Android versions can be found in the [Android Enterprise documentation](https://developer.android.com/work/versions).
+
+Developers building apps for enterprise environments should be aware of [Android's work profile APIs](https://developer.android.com/work/versions), device policy restrictions, and should implement features like [managed configurations](https://developer.android.com/work/managed-configurations) to enable IT administrators to configure apps remotely, ensuring compliance with organizational security requirements.
 
 ### Software Isolation
 
@@ -77,17 +99,18 @@ Further information is available in the [Android documentation](https://source.a
 
 Even though the Android operating system is based on Linux, it doesn't implement user accounts in the same way other Unix-like systems do. In Android, the multi-user support of the Linux kernel is used to sandbox apps: with a few exceptions, each app runs as though under a separate Linux user, effectively isolated from other apps and the rest of the operating system.
 
-The file [system/core/include/private/android_filesystem_config.h](http://androidxref.com/7.1.1_r6/xref/system/core/include/private/android_filesystem_config.h "android_filesystem_config.h") includes a list of the predefined users and groups system processes are assigned to. UIDs (userIDs) for other applications are added as the latter are installed. For more details, check out Bin Chen's [blog post](https://pierrchen.blogspot.mk/2016/09/an-walk-through-of-android-uidgid-based.html "Bin Chen - AProgrammer Blog - Android Security: An Overview Of Application Sandbox") on Android sandboxing.
+The file [android_filesystem_config.h](https://android.googlesource.com/platform/system/core/+/master/libcutils/include/private/android_filesystem_config.h) includes a list of the predefined users and groups system processes are assigned to. UIDs (userIDs) for other applications are added as the latter are installed.
 
-For example, Android 7.0 (API level 24) defines the following system users:
+For example, Android 9.0 (API level 28) defines the following system users:
 
 ```c
     #define AID_ROOT             0  /* traditional unix root user */
+    #...
     #define AID_SYSTEM        1000  /* system server */
     #...
     #define AID_SHELL         2000  /* adb and debug shell user */
     #...
-    #define AID_APP          10000  /* first app user */
+    #define AID_APP_START          10000  /* first app user */
     ...
 ```
 
@@ -103,21 +126,21 @@ Android implements an extensive permissions system that is used as an access con
 
 > Prior to Android 6.0 (API level 23), all permissions an app requested were granted at installation (Install-time permissions). From API level 23 onwards, the user must approve some permissions requests during runtime (Runtime permissions).
 
-Further information is available on the [Android documentation](https://developer.android.com/guide/topics/permissions/overview) including several [considerations](https://developer.android.com/training/permissions/evaluating) and [best practices](https://developer.android.com/training/permissions/usage-notes)
+Further information is available in the [Android documentation](https://developer.android.com/guide/topics/permissions/overview) including several [considerations](https://developer.android.com/training/permissions/evaluating) and [best practices](https://developer.android.com/training/permissions/usage-notes).
 
-To learn how to test app permissions refer to the [Testing App Permissions](0x05h-Testing-Platform-Interaction.md#testing-app-permissions-mstg-platform-1) section in the "Android Platform APIs" chapter.
+To learn how to test app permissions refer to the [Testing App Permissions](0x05h-Testing-Platform-Interaction.md#app-permissions) section in the "Android Platform APIs" chapter.
 
 ### Network security
 
 #### TLS by Default
 
-By default, since Android 9 (API level 28), all network activity is treated as being executed in a hostile environment. This means that the Android system will allow apps only to communicate over a network channel that is established using the Transport Layer Security (TLS) protocol. This protocol effectively encrypts all network traffic and creates a secure channel to a server. It may be the case that you would want to use clear traffic connections for legacy reasons. This can be achieved by adapting the `res/xml/network_security_config.xml` file in the application.
+By default, since Android 9 (API level 28), all network activity is treated as being executed in a hostile environment. This means that the Android system will only allow apps to communicate over a network channel that is established using the Transport Layer Security (TLS) protocol. This protocol effectively encrypts all network traffic and creates a secure channel to a server. It may be the case that you would want to use clear traffic connections for legacy reasons. This can be achieved by adapting the `res/xml/network_security_config.xml` file in the application.
 
 Further information is available in the [Android documentation](https://developer.android.com/training/articles/security-config.html).
 
 #### DNS over TLS
 
-System-wide DNS over TLS support has been introduced since Android 9 (API level 28). It allows you to perform queries to DNS servers using the TLS protocol.  A secure channel is established with the DNS server through which the DNS query is sent. This assures that no sensitive data is exposed during a DNS lookup.
+System-wide DNS over TLS support has been introduced since Android 9 (API level 28). It allows you to perform queries to DNS servers using the TLS protocol. A secure channel is established with the DNS server through which the DNS query is sent. This assures that no sensitive data is exposed during a DNS lookup.
 
 Further information is available on the [Android Developers blog](https://android-developers.googleblog.com/2018/04/dns-over-tls-support-in-android-p.html).
 
@@ -149,19 +172,11 @@ Android apps interact with system services via the Android Framework, an abstrac
 
 The framework also offers common security functions, such as cryptography.
 
-The API specifications change with every new Android release. Critical bug fixes and security patches are usually applied to earlier versions as well. The oldest Android version supported at the time of writing is Android 8.1 (API level 27) and the current Android version is Android 10 (API level 29).
+The API specifications change with every new Android release. Critical bug fixes and security patches are usually applied to earlier versions as well.
 
-Noteworthy API versions:
+Noteworthy [API versions](https://developer.android.com/guide/topics/manifest/uses-sdk-element#ApiLevels "What is API level?"). See @MASTG-BEST-0010 for more information about security and privacy features introduced in different Android versions.
 
-- Android 4.2 (API level 16) in November 2012 (introduction of SELinux)
-- Android 4.3 (API level 18) in July 2013 (SELinux became enabled by default)
-- Android 4.4 (API level 19) in October 2013 (several new APIs and ART introduced)
-- Android 5.0 (API level 21) in November 2014 (ART used by default and many other features added)
-- Android 6.0 (API level 23) in October 2015 (many new features and improvements, including granting; detailed permissions setup at runtime rather than all or nothing during installation)
-- Android 7.0 (API level 24-25) in August 2016 (new JIT compiler on ART)
-- Android 8.0 (API level 26-27) in August 2017 (a lot of security improvements)
-- Android 9 (API level 28) in August 2018 (restriction of background usage of mic or camera, introduction of lockdown mode, default HTTPS for all apps)
-- Android 10 (API level 29) in September 2019 (notification bubbles, project Mainline)
+Android development releases follow a unique structure. They are organized into families and given alphabetical codenames inspired by tasty treats. You can find them all [on the Android source website](https://source.android.com/docs/setup/about/build-numbers "Codenames, tags, and build numbers").
 
 ### The App Sandbox
 
@@ -169,7 +184,7 @@ Apps are executed in the Android Application Sandbox, which separates the app da
 
 Installation of a new app creates a new directory named after the app package, which results in the following path: `/data/data/[package-name]`. This directory holds the app's data. Linux directory permissions are set such that the directory can be read from and written to only with the app's unique UID.
 
-![OWASP MSTG](Images/Chapters/0x05a/Selection_003.png) \
+<img src="Images/Chapters/0x05a/Selection_003.png" width="400px" />
 
 We can confirm this by looking at the file system permissions in the `/data/data` folder. For example, we can see that Google Chrome and Calendar are assigned one directory each and run under different user accounts:
 
@@ -200,7 +215,7 @@ uid=10188(u0_a188) gid=10188(u0_a188) groups=10188(u0_a188),3003(inet),
 
 The relationship between group IDs and permissions is defined in the following file:
 
-[frameworks/base/data/etc/platform.xml](http://androidxref.com/7.1.1_r6/xref/frameworks/base/data/etc/platform.xml "platform.xml")
+[platform.xml](https://android.googlesource.com/platform/frameworks/base/+/master/data/etc/platform.xml)
 
 ```xml
 <permission name="android.permission.INTERNET" >
@@ -223,7 +238,7 @@ The process `Zygote` starts up during [Android initialization](https://github.co
 
 #### App Lifecycle
 
-In Android, the lifetime of an app process is controlled by the operating system. A new Linux process is created when an app component is started and the same app doesn’t yet have any other components running. Android may kill this process when the latter is no longer necessary or when reclaiming memory is necessary to run more important apps. The decision to kill a process is primarily related to the state of the user's interaction with the process. In general, processes can be in one of four states.
+In Android, the lifetime of an app process is controlled by the operating system. A new Linux process is created when an app component is started and the same app doesn't yet have any other components running. Android may kill this process when the latter is no longer necessary or when reclaiming memory is necessary to run more important apps. The decision to kill a process is primarily related to the state of the user's interaction with the process. In general, processes can be in one of four states.
 
 - A foreground process (e.g., an activity running at the top of the screen or a running BroadcastReceiver)
 - A visible process is a process that the user is aware of, so killing it would have a noticeable negative impact on user experience. One example is running an activity that's visible to the user on-screen but not in the foreground.
@@ -238,7 +253,7 @@ Android applications can be shipped in two forms: the Android Package Kit (APK) 
 If you have an Android App Bundle, you can best use the [bundletool](https://developer.android.com/studio/command-line/bundletool "bundletool") command line tool from Google to build unsigned APKs in order to use the existing tooling on the APK. You can create an APK from an AAB file by running the following command:
 
 ```bash
-$ bundletool build-apks --bundle=/MyApp/my_app.aab --output=/MyApp/my_app.apks
+bundletool build-apks --bundle=/MyApp/my_app.aab --output=/MyApp/my_app.apks
 ```
 
 If you want to create signed APKs ready for deployment to a test device, use:
@@ -255,52 +270,141 @@ We recommend that you test both the APK with and without the additional modules,
 
 ### Android Manifest
 
-Every app has an Android Manifest file, which embeds content in binary XML format. The standard name of this file is AndroidManifest.xml. It is located in the root directory of the app’s Android Package Kit (APK) file.
+Every Android app contains an `AndroidManifest.xml` file in the root of the APK, stored in binary XML format. This file defines the app's structure and key properties used by the Android operating system during installation and runtime.
 
-The manifest file describes the app structure, its components (activities, services, content providers, and intent receivers), and requested permissions. It also contains general app metadata, such as the app's icon, version number, and theme. The file may list other information, such as compatible APIs (minimal, targeted, and maximal SDK version) and the [kind of storage it can be installed on (external or internal)](https://developer.android.com/guide/topics/data/install-location.html "Define app install location").
+Security-relevant elements include:
 
-Here is an example of a manifest file, including the package name (the convention is a reversed URL, but any string is acceptable). It also lists the app version, relevant SDKs, required permissions, exposed content providers, broadcast receivers used with intent filters and a description of the app and its activities:
+- **Permissions:** Declares required permissions using `<uses-permission>` such as access to the internet, camera, storage, location, or contacts. These define the app's access boundaries and should follow the principle of least privilege. Custom permissions can be defined using `<permission>` and should include a proper `protectionLevel` such as `signature` or `dangerous` to avoid being misused by other apps.
+- **Components:** The manifest lists all [app components](#app-components) declared in the app serving as entry points. They can be exposed to other apps (via intent filters or the `exported` attribute) so they are critical to determine how an attacker might interact with the app. The main component types are:
+    - **Activities:** define user interface screens.
+    - **Services:** run background tasks.
+    - **Broadcast Receivers:** handle external messages.
+    - **Content Providers:** expose structured data.
+- **Deep Links:** [Deep links](0x05h-Testing-Platform-Interaction.md#deep-links) are configured via intent filters with the `VIEW` action, `BROWSABLE` category, and a `data` element specifying a URI pattern. These can expose activities to web or app links and must be verified carefully to avoid injection or spoofing risks. Adding `android:autoVerify="true"` enables App Links, which restrict handling of verified links to the declared app, reducing the risk of link hijacking.
+- **Uses Cleartext Traffic:** The `android:usesCleartextTraffic` attribute controls whether the app allows non-encrypted HTTP traffic. From Android 9 (API 28) onward, cleartext traffic is disabled by default unless explicitly allowed. This attribute can also be overridden by the `networkSecurityConfig`.
+- **Network Security Config:** An optional XML file defined via `android:networkSecurityConfig`, available since Android 7.0 (API level 24), that provides granular control over [network security behavior](0x05g-Testing-Network-Communication.md#android-network-security-configuration). It allows specifying trusted certificate authorities, per-domain TLS requirements, and cleartext traffic exceptions, overriding global settings defined in `android:usesCleartextTraffic`.
+- **Backup Behavior:** The `android:allowBackup` attribute allows or prevents app data from being [backed up](0x05d-Testing-Data-Storage.md#backups).
+- **Task Affinities and Launch Modes:** These settings influence how activities are grouped and launched. Misconfigurations can allow task hijacking or phishing-style attacks if an attacker's app mimics legitimate components.
+
+The full list of available manifest options can be found in the official [Android Manifest file documentation](https://developer.android.com/guide/topics/manifest/manifest-intro.html "Android Developer Guide for Manifest").
+
+At build time, the manifest is merged with those from all included libraries and dependencies. The final merged manifest may include additional permissions, components, or settings not explicitly declared by the developer. Security reviews must analyze the merged output to understand the app's real exposure.
+
+Here is an example of a manifest file as defined by a developer. It declares several permissions, allows backup, and defines the app's main activity:
 
 ```xml
-<manifest
-    package="com.owasp.myapplication"
-    android:versionCode="0.1" >
-
-    <uses-sdk android:minSdkVersion="12"
-        android:targetSdkVersion="22"
-        android:maxSdkVersion="25" />
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-
-    <provider
-        android:name="com.owasp.myapplication.MyProvider"
-        android:exported="false" />
-
-    <receiver android:name=".MyReceiver" >
-        <intent-filter>
-            <action android:name="com.owasp.myapplication.myaction" />
-        </intent-filter>
-    </receiver>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
-        android:icon="@drawable/ic_launcher"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:theme="@style/Theme.Material.Light" >
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MASTestApp"
+        tools:targetApi="31">
         <activity
-            android:name="com.owasp.myapplication.MainActivity" >
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.MASTestApp">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+    </application>
+
+</manifest>
+```
+
+If you were to obtain the AndroidManifest.xml file from an APK (@MASTG-TECH-0117), you would see that it includes additional elements such as the `package` attribute, which defines the app's unique identifier, the `<uses-sdk>` element that specifies the `android:minSdkVersion` and `android:targetSdkVersion`, new activities, providers and receivers and other attributes such as `android:debuggable="true"` which indicates that the app is in debug mode.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" android:versionCode="1" android:versionName="1.0"
+    android:compileSdkVersion="35"
+    android:compileSdkVersionCodename="15"
+    package="org.owasp.mastestapp"
+    platformBuildVersionCode="35"
+    platformBuildVersionName="15">
+    <uses-sdk
+        android:minSdkVersion="29"
+        android:targetSdkVersion="35"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.READ_CONTACTS"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <permission
+        android:name="org.owasp.mastestapp.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        android:protectionLevel="signature"/>
+    <uses-permission android:name="org.owasp.mastestapp.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"/>
+    <application
+        android:theme="@style/Theme.MASTestApp"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:debuggable="true"
+        android:testOnly="true"
+        android:allowBackup="true"
+        android:supportsRtl="true"
+        android:extractNativeLibs="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+        android:dataExtractionRules="@xml/data_extraction_rules">
+        <activity
+            android:theme="@style/Theme.MASTestApp"
+            android:name="org.owasp.mastestapp.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <activity
+            android:name="androidx.compose.ui.tooling.PreviewActivity"
+            android:exported="true"/>
+        <activity
+            android:name="androidx.activity.ComponentActivity"
+            android:exported="true"/>
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:exported="false"
+            android:authorities="org.owasp.mastestapp.androidx-startup">
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                android:value="androidx.startup"/>
+            ...
+        </provider>
+        <receiver
+            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+            android:permission="android.permission.DUMP"
+            android:enabled="true"
+            android:exported="true"
+            android:directBootAware="false">
+            <intent-filter>
+                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE"/>
+            </intent-filter>
+            ...
+        </receiver>
     </application>
 </manifest>
 ```
 
-The full list of available manifest options is in the official [Android Manifest file documentation](https://developer.android.com/guide/topics/manifest/manifest-intro.html "Android Developer Guide for Manifest").
-
 ### App Components
 
-Android apps are made of several high-level components. The main components are:
+Android apps are made of several high-level [app components](https://developer.android.com/guide/components/fundamentals#Components). The main components are:
 
 - Activities
 - Fragments
@@ -310,32 +414,13 @@ Android apps are made of several high-level components. The main components are:
 
 All these elements are provided by the Android operating system, in the form of predefined classes available through APIs.
 
+Four of these component types (activities, services, broadcast receivers, and content providers) act as inter-process communication (IPC) entry points and are key to determining how other apps can interact with an app. They are covered in detail in the Knowledge base; this overview summarizes each and links to the relevant article.
+
 #### Activities
 
-Activities make up the visible part of any app. There is one activity per screen, so an app with three different screens implements three different activities. Activities are declared by extending the Activity class. They contain all user interface elements: fragments, views, and layouts.
+Activities make up the visible part of any app, with one activity per screen. Each activity extends the [`Activity`](https://developer.android.com/reference/android/app/Activity) class, hosts the screen's user interface elements, and must be declared in the `AndroidManifest.xml` file with an [`<activity>`](https://developer.android.com/guide/topics/manifest/activity-element) element. Activities have their own [lifecycle](https://developer.android.com/guide/components/activities/activity-lifecycle) managed by the system, with callbacks such as `onCreate`, `onStart`, `onResume`, `onPause`, `onStop`, and `onDestroy`.
 
-Each activity needs to be declared in the Android Manifest with the following syntax:
-
-```xml
-<activity android:name="ActivityName">
-</activity>
-```
-
-Activities not declared in the manifest can't be displayed, and attempting to launch them will raise an exception.
-
-Like apps, activities have their own life cycle and need to monitor system changes to handle them. Activities can be in the following states: active, paused, stopped, and inactive. These states are managed by the Android operating system. Accordingly, activities can implement the following event managers:
-
-- onCreate
-- onSaveInstanceState
-- onStart
-- onResume
-- onRestoreInstanceState
-- onPause
-- onStop
-- onRestart
-- onDestroy
-
-An app may not explicitly implement all event managers, in which case default actions are taken. Typically, at least the `onCreate` manager is overridden by the app developers. This is how most user interface components are declared and initialized. `onDestroy` may be overridden when resources (like network connections or connections to databases) must be explicitly released or specific actions must occur when the app shuts down.
+Other apps can start an activity that is exported, which makes activities an IPC entry point. For a detailed description of activities, intent filters, and the `android:exported` attribute, see @MASTG-KNOW-0132.
 
 #### Fragments
 
@@ -385,217 +470,37 @@ Fragments don't necessarily have a user interface; they can be a convenient and 
 
 #### Content Providers
 
-Android uses SQLite to store data permanently: as with Linux, data is stored in files. SQLite is a light, efficient, open source relational data storage technology that does not require much processing power, which makes it ideal for mobile use. An entire API with specific classes (Cursor, ContentValues, SQLiteOpenHelper, ContentProvider, ContentResolver, etc.) is available.
-SQLite is not run as a separate process; it is part of the app.
-By default, a database belonging to a given app is accessible to this app only. However, content providers offer a great mechanism for abstracting data sources (including databases and flat files); they also provide a standard and efficient mechanism to share data between apps, including native apps. To be accessible to other apps, a content provider needs to be explicitly declared in the manifest file of the app that will share it. As long as content providers aren't declared, they won't be exported and can only be called by the app that creates them.
+A [content provider](https://developer.android.com/guide/topics/providers/content-providers) exposes structured data to other apps and system components through a URI-based interface using the `content://` scheme. Providers support create, read, update, and delete operations and are typically backed by an SQLite database, although any data source can be used. A provider must be declared in the `AndroidManifest.xml` file with a [`<provider>`](https://developer.android.com/guide/topics/manifest/provider-element) element and is reachable by other apps only when exported, which makes it an IPC entry point.
 
-Content providers are implemented through a URI addressing scheme: they all use the content:// model. Regardless of the type of sources (SQLite database, flat file, etc.), the addressing scheme is always the same, thereby abstracting the sources and offering the developer a unique scheme. Content providers offer all regular database operations: create, read, update, delete. That means that any app with proper rights in its manifest file can manipulate the data from other apps.
+For a detailed description of content providers, their URI structure, and access control, see @MASTG-KNOW-0117.
 
 #### Services
 
-Services are Android OS components (based on the Service class) that perform tasks in the background (data processing, starting intents, and notifications, etc.) without presenting a user interface. Services are meant to run processes long-term. Their system priorities are lower than those of active apps and higher than those of inactive apps. Therefore, they are less likely to be killed when the system needs resources, and they can be configured to automatically restart when enough resources become available. This makes services a great candidate for running  background tasks. Please note that Services, like Activities, are executed in the main app thread. A service does not create its own thread and does not run in a separate process unless you specify otherwise.
+A [service](https://developer.android.com/guide/components/services) is an app component (based on the [`Service`](https://developer.android.com/reference/android/app/Service) class) that performs tasks in the background without a user interface, such as data processing or network transactions. A service must be declared in the `AndroidManifest.xml` file with a [`<service>`](https://developer.android.com/guide/topics/manifest/service-element) element. Other apps can start or bind to a service that is exported, which makes services an IPC entry point. A service runs in the main thread of its hosting process unless configured otherwise.
+
+For a detailed description of started and bound services, their interfaces, and access control, see @MASTG-KNOW-0133.
 
 ### Inter-Process Communication
 
-As we've already learned, every Android process has its own sandboxed address space. Inter-process communication facilities allow apps to exchange signals and data securely. Instead of relying on the default Linux IPC facilities, Android's IPC is based on Binder, a custom implementation of OpenBinder. Most Android system services and all high-level IPC services depend on Binder.
+Every Android process has its own sandboxed address space. Inter-process communication (IPC) facilities let apps and the system exchange data across these boundaries. Instead of relying on the default Linux IPC facilities, Android's IPC is based on [Binder](https://developer.android.com/reference/android/os/Binder), a custom implementation derived from OpenBinder. Most Android system services and all high-level IPC mechanisms depend on Binder, which follows a client-server model: a caller invokes a method on a proxy object, the framework marshals the parameters into a parcel, and a transaction is sent to the Binder server, which dispatches the call to the target object.
 
-The term *Binder* stands for a lot of different things, including:
-
-- Binder Driver: the kernel-level driver
-- Binder Protocol: low-level ioctl-based protocol used to communicate with the binder driver
-- IBinder Interface: a well-defined behavior that Binder objects implement
-- Binder object: generic implementation of the IBinder interface
-- Binder service: implementation of the Binder object; for example, location service, and sensor service
-- Binder client: an object using the Binder service
-
-The Binder framework includes a client-server communication model. To use IPC, apps call IPC methods in proxy objects. The proxy objects transparently *marshall* the call parameters into a *parcel* and send a transaction to the Binder server, which is implemented as a character driver (/dev/binder). The server holds a thread pool for handling incoming requests and delivers messages to the destination object. From the perspective of the client app, all of this seems like a regular method call, all the heavy lifting is done by the Binder framework.
-
-![OWASP MSTG](Images/Chapters/0x05a/binder.jpg) \
-
-*Binder Overview - Image source: [Android Binder by Thorsten Schreiber](https://www.nds.rub.de/media/attachments/files/2011/10/main.pdf "Android Binder")*
-
-Services that allow other applications to bind to them are called *bound services*. These services must provide an IBinder interface to clients. Developers use the Android Interface Descriptor Language (AIDL) to write interfaces for remote services.
-
-ServiceManager is a system daemon that manages the registration and lookup of system services. It maintains a list of name/Binder pairs for all registered services. Services are added with `addService` and retrieved by name with the static `getService` method in `android.os.ServiceManager`:
-
-Example in Java:
-
-```java
-public static IBinder getService(String name) {
-        try {
-            IBinder service = sCache.get(name);
-            if (service != null) {
-                return service;
-            } else {
-                return getIServiceManager().getService(name);
-            }
-        } catch (RemoteException e) {
-            Log.e(TAG, "error in getService", e);
-        }
-        return null;
-    }
-```
-
-Example in Kotlin:
-
-```kotlin
-companion object {
-        private val sCache: Map<String, IBinder> = ArrayMap()
-        fun getService(name: String): IBinder? {
-            try {
-                val service = sCache[name]
-                return service ?: getIServiceManager().getService(name)
-            } catch (e: RemoteException) {
-                Log.e(FragmentActivity.TAG, "error in getService", e)
-            }
-            return null
-        }
-    }
-```
-
-You can query the list of system services with the `service list` command.
-
-```bash
-$ adb shell service list
-Found 99 services:
-0 carrier_config: [com.android.internal.telephony.ICarrierConfigLoader]
-1 phone: [com.android.internal.telephony.ITelephony]
-2 isms: [com.android.internal.telephony.ISms]
-3 iphonesubinfo: [com.android.internal.telephony.IPhoneSubInfo]
-```
+On top of Binder, Android builds the [`Intent`](https://developer.android.com/reference/android/content/Intent) messaging system and the four app-component IPC entry points (activities, services, broadcast receivers, and content providers). For a detailed description of the IPC model, Binder, and intents, see @MASTG-KNOW-0020.
 
 #### Intents
 
-*Intent messaging* is an asynchronous communication framework built on top of Binder. This framework allows both point-to-point and publish-subscribe messaging. An *Intent* is a messaging object that can be used to request an action from another app component. Although intents facilitate inter-component communication in several ways, there are three fundamental use cases:
+An _Intent_ is a messaging object used to request an action from another app component. Intents support three fundamental use cases: starting an activity, starting or binding to a service, and delivering a broadcast. An intent can be **explicit** (naming the target component) or **implicit** (describing an action that the system resolves to a component based on its [`<intent-filter>`](https://developer.android.com/guide/topics/manifest/intent-filter-element) declarations).
 
-- Starting an activity
-  - An activity represents a single screen in an app. You can start a new instance of an activity by passing an intent to `startActivity`. The intent describes the activity and carries necessary data.
-- Starting a service
-  - A Service is a component that performs operations in the background, without a user interface. With Android 5.0 (API level 21) and later, you can start a service with JobScheduler.
-- Delivering a broadcast
-  - A broadcast is a message that any app can receive. The system delivers broadcasts for system events, including system boot and charging initialization. You can deliver a broadcast to other apps by passing an intent to `sendBroadcast` or `sendOrderedBroadcast`.
-
-There are two types of intents. Explicit intents name the component that will be started (the fully qualified class name). For instance:
-
-Example in Java:
-
-```java
-Intent intent = new Intent(this, myActivity.myClass);
-```
-
-Example in Kotlin:
-
-```kotlin
-var intent = Intent(this, myActivity.myClass)
-```
-
-Implicit intents are sent to the OS to perform a given action on a given set of data (The URL of the OWASP website in our example below). It is up to the system to decide which app or class will perform the corresponding service. For instance:
-
-Example in Java:
-
-```java
-Intent intent = new Intent(Intent.MY_ACTION, Uri.parse("https://www.owasp.org"));
-```
-
-Example in Kotlin:
-
-```kotlin
-var intent = Intent(Intent.MY_ACTION, Uri.parse("https://www.owasp.org"))
-```
-
-An *intent filter* is an expression in Android Manifest files that specifies the type of intents the component would like to receive. For instance, by declaring an intent filter for an activity, you make it possible for other apps to directly start your activity with a certain kind of intent. Likewise, your activity can only be started with an explicit intent if you don't declare any intent filters for it.
-
-Android uses intents to broadcast messages to apps (such as an incoming call or SMS) important power supply information (low battery, for example), and network changes (loss of connection, for instance). Extra data may be added to intents (through `putExtra`/`getExtras`).
-
-Here is a short list of intents sent by the operating system. All constants are defined in the Intent class, and the whole list is in the official Android documentation:
-
-- ACTION_CAMERA_BUTTON
-- ACTION_MEDIA_EJECT
-- ACTION_NEW_OUTGOING_CALL
-- ACTION_TIMEZONE_CHANGED
-
-To improve security and privacy, a Local Broadcast Manager is used to send and receive intents within an app without having them sent to the rest of the operating system. This is very useful for ensuring that sensitive and private data don't leave the app perimeter (geolocation data for instance).
+For a detailed description of explicit and implicit intents, see @MASTG-KNOW-0025. Related intent-based concepts are covered in @MASTG-KNOW-0024 (Pending Intents) and @MASTG-KNOW-0019 (Deep Links).
 
 #### Broadcast Receivers
 
-Broadcast Receivers are components that allow apps to receive notifications from other apps and from the system itself. With them, apps can react to events (internal, initiated by other apps, or initiated by the operating system). They are generally used to update user interfaces, start services, update content, and create user notifications.
+A [broadcast receiver](https://developer.android.com/guide/components/broadcasts) lets an app receive notifications from other apps and from the system through a publish-subscribe model. A receiver can be declared in the `AndroidManifest.xml` file with a [`<receiver>`](https://developer.android.com/guide/topics/manifest/receiver-element) element or registered at runtime with the relevant `registerReceiver()` methods. Apps send broadcasts with `sendBroadcast()` or `sendOrderedBroadcast()`.
 
-There are two ways to make a Broadcast Receiver known to the system. One way is to declare it in the Android Manifest file. The manifest should specify an association between the Broadcast Receiver and an intent filter to indicate the actions the receiver is meant to listen for.
-
-An example Broadcast Receiver declaration with an intent filter in a manifest:
-
-```xml
-<receiver android:name=".MyReceiver" >
-    <intent-filter>
-        <action android:name="com.owasp.myapplication.MY_ACTION" />
-    </intent-filter>
-</receiver>
-```
-
-Please note that in this example, the Broadcast Receiver does not include the [`android:exported`](https://developer.android.com/guide/topics/manifest/receiver-element "receiver element") attribute. As at least one filter was defined, the default value will be set to "true". In absence of any filters, it will be set to "false".
-
-The other way is to create the receiver dynamically in code. The receiver can then register with the method [`Context.registerReceiver`](https://developer.android.com/reference/android/content/Context.html#registerReceiver%28android.content.BroadcastReceiver,%2520android.content.IntentFilter%29 "Context.registerReceiver").
-
-An example of registering a Broadcast Receiver dynamically:
-
-Example in Java:
-
-```java
-// Define a broadcast receiver
-BroadcastReceiver myReceiver = new BroadcastReceiver() {
-    @Override
-    public void onReceive(Context context, Intent intent) {
-        Log.d(TAG, "Intent received by myReceiver");
-    }
-};
-// Define an intent filter with actions that the broadcast receiver listens for
-IntentFilter intentFilter = new IntentFilter();
-intentFilter.addAction("com.owasp.myapplication.MY_ACTION");
-// To register the broadcast receiver
-registerReceiver(myReceiver, intentFilter);
-// To un-register the broadcast receiver
-unregisterReceiver(myReceiver);
-```
-
-Example in Kotlin:
-
-```kotlin
-// Define a broadcast receiver
-val myReceiver: BroadcastReceiver = object : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        Log.d(FragmentActivity.TAG, "Intent received by myReceiver")
-    }
-}
-// Define an intent filter with actions that the broadcast receiver listens for
-val intentFilter = IntentFilter()
-intentFilter.addAction("com.owasp.myapplication.MY_ACTION")
-// To register the broadcast receiver
-registerReceiver(myReceiver, intentFilter)
-// To un-register the broadcast receiver
-unregisterReceiver(myReceiver)
-```
-
-Note that the system starts an app with the registered receiver automatically when a relevant intent is raised.
-
-According to [Broadcasts Overview](https://developer.android.com/guide/components/broadcasts "Broadcasts Overview"), a broadcast is considered "implicit" if it does not target an app specifically. After receiving an implicit broadcast, Android will list all apps that have registered a given action in their filters. If more than one app has registered for the same action, Android will prompt the user to select from the list of available apps.
-
-An interesting feature of Broadcast Receivers is that they can be prioritized; this way, an intent will be delivered to all authorized receivers according to their priority. A priority can be assigned to an intent filter in the manifest via the `android:priority` attribute as well as programmatically via the [`IntentFilter.setPriority`](https://developer.android.com/reference/android/content/IntentFilter#setPriority%28int%29 "IntentFilter.setPriority") method. However, note that receivers with the same priority will be [run in an arbitrary order](https://developer.android.com/guide/components/broadcasts.html#sending-broadcasts "Sending Broadcasts").
-
-If your app is not supposed to send broadcasts across apps, use a Local Broadcast Manager ([`LocalBroadcastManager`](https://developer.android.com/reference/androidx/localbroadcastmanager/content/LocalBroadcastManager.html "LocalBroadcastManager")). They can be used to make sure intents are received from the internal app only, and any intent from any other app will be discarded. This is very useful for improving security and the efficiency of the app, as no interprocess communication is involved. However, please note that the `LocalBroadcastManager` class is [deprecated](https://developer.android.com/reference/androidx/localbroadcastmanager/content/LocalBroadcastManager.html "LocalBroadcastManager") and Google recommends using alternatives such as [`LiveData`](https://developer.android.com/reference/androidx/lifecycle/LiveData.html "LiveData").
-
-For more security considerations regarding Broadcast Receiver, see [Security Considerations and Best Practices](https://developer.android.com/guide/components/broadcasts.html#security-and-best-practices "Security Considerations and Best Practices").
-
-#### Implicit Broadcast Receiver Limitation
-
-According to [Background Optimizations](https://developer.android.com/topic/performance/background-optimization "Background Optimizations"), apps targeting Android 7.0 (API level 24) or higher no longer receive `CONNECTIVITY_ACTION` broadcast unless they register their Broadcast Receivers with `Context.registerReceiver()`. The system does not send `ACTION_NEW_PICTURE` and `ACTION_NEW_VIDEO` broadcasts as well.
-
-According to [Background Execution Limits](https://developer.android.com/about/versions/oreo/background.html#broadcasts "Background Execution Limits"), apps that target Android 8.0 (API level 26) or higher can no longer register Broadcast Receivers for implicit broadcasts in their manifest, except for those listed in [Implicit Broadcast Exceptions](https://developer.android.com/guide/components/broadcast-exceptions "Implicit Broadcast Exceptions"). The Broadcast Receivers created at runtime by calling `Context.registerReceiver` are not affected by this limitation.
-
-According to [Changes to System Broadcasts](https://developer.android.com/guide/components/broadcasts#changes-system-broadcasts "Changes to System Broadcasts"), beginning with Android 9 (API level 28), the `NETWORK_STATE_CHANGED_ACTION` broadcast doesn't receive information about the user's location or personally identifiable data.
+For a detailed description of broadcast receivers, their registration, and access control, see @MASTG-KNOW-0134.
 
 ## Android Application Publishing
 
-Once an app has been successfully developed, the next step is to publish and share it with others. However, apps can't simply be added to a store and shared, they must be first signed. The cryptographic signature serves as a verifiable mark placed by the developer of the app. It identifies the app’s author and ensures that the app has not been modified since its initial distribution.
+Once an app has been successfully developed, the next step is to publish and share it with others. However, apps can't simply be added to a store and shared, they must be first signed. The cryptographic signature serves as a verifiable mark placed by the developer of the app. It identifies the app's author and ensures that the app has not been modified since its initial distribution.
 
 ### Signing Process
 
@@ -604,17 +509,26 @@ When an application is installed on the Android device, the Package Manager ensu
 
 ### APK Signing Schemes
 
-Android supports three application signing schemes. Starting with Android 9 (API level 28), APKs can be verified with APK Signature Scheme v3 (v3 scheme), APK Signature Scheme v2 (v2 scheme) or JAR signing (v1 scheme). For Android 7.0 (API level 24) and above, APKs can be verified with the APK Signature Scheme v2 (v2 scheme) or JAR signing (v1 scheme). For backwards compatibility, an APK can be signed with multiple signature schemes in order to make the app run on both newer and older SDK versions. [Older platforms ignore v2 signatures and verify v1 signatures only](https://source.android.com/security/apksigning/ "APK Signing").
+Android supports multiple application signing schemes:
+
+- **Below Android 7.0 (API level 24)**: applications can only use the JAR signing (v1) scheme which does not protect all parts of the APK. This scheme is considered insecure.
+- **Android 7.0 (API level 24) and above**: applications can use the **v2 signature scheme**, which signs the APK as a whole, providing stronger protection compared to the older v1 (JAR) signing method.
+- **Android 9 (API level 28) and above**: It's recommended to use both the **v2 and v3 signature schemes**. The v3 scheme supports **key rotation**, enabling developers to replace keys in the event of a compromise without invalidating old signatures.
+- **Android 11 (API level 30) and above**: applications can optionally include the **v4 signature scheme** to enable faster incremental updates.
+
+For backwards compatibility, an APK can be signed with multiple signature schemes in order to make the app run on both newer and older SDK versions. For example, [older platforms ignore v2 signatures and verify v1 signatures only](https://source.android.com/security/apksigning/).
 
 #### JAR Signing (v1 Scheme)
 
 The original version of app signing implements the signed APK as a standard signed JAR, which must contain all the entries in `META-INF/MANIFEST.MF`. All files must be signed with a common certificate. This scheme does not protect some parts of the APK, such as ZIP metadata. The drawback of this scheme is that the APK verifier needs to process untrusted data structures before applying the signature, and the verifier discards data the data structures don't cover. Also, the APK verifier must decompress all compressed files, which takes considerable time and memory.
 
+This signature scheme is considered insecure, it is for example affected by the **Janus vulnerability (CVE-2017-13156)**, which can allow malicious actors to modify APK files without invalidating the v1 signature. As such, **v1 should never be relied on for devices running Android 7.0 and above**.
+
 #### APK Signature Scheme (v2 Scheme)
 
 With the APK signature scheme, the complete APK is hashed and signed, and an APK Signing Block is created and inserted into the APK. During validation, the v2 scheme checks the signatures of the entire APK file. This form of APK verification is faster and offers more comprehensive protection against modification. You can see the [APK signature verification process for v2 Scheme](https://source.android.com/security/apksigning/v2#verification "APK Signature verification process") below.
 
-![OWASP MSTG](Images/Chapters/0x05a/apk-validation-process.png) \
+<img src="Images/Chapters/0x05a/apk-validation-process.png" width="400px" />
 
 #### APK Signature Scheme (v3 Scheme)
 
@@ -623,11 +537,11 @@ The v3 APK Signing Block format is the same as v2. V3 adds information about the
 The proof-of-rotation attribute in the signed-data of the signing block consists of a singly-linked list, with each node containing a signing certificate used to sign previous versions of the app. To make backward compatibility work, the old signing certificates sign the new set of certificates, thus providing each new key with evidence that it should be as trusted as the older key(s).
 It is no longer possible to sign APKs independently, because the proof-of-rotation structure must have the old signing certificates signing the new set of certificates, rather than signing them one-by-one. You can see the [APK signature v3 scheme verification process](https://source.android.com/security/apksigning/v3 "APK Signature v3 scheme verification process") below.
 
-![OWASP MSTG](Images/Chapters/0x05a/apk-validation-process-v3-scheme.png) \
+<img src="Images/Chapters/0x05a/apk-validation-process-v3-scheme.png" width="400px" />
 
 #### APK Signature Scheme (v4 Scheme)
 
-The APK Signature Scheme v4 was introduced along with Android 11.0 (API level 30). which requires all devices launched with it to have [fs-verity](https://kernel.org/doc/html/latest/filesystems/fsverity.html) enabled by default. fs-verity is a Linux kernel feature that is primarily used for file authentication (detection of malicious modifications) due to its extremely efficient file hash calculation. Read requests only will succeed if the content verifies against trusted digital certificates that were loaded to the kernel keyring during boot time.
+The APK Signature Scheme v4 was introduced along with Android 11 (API level 30) and requires all devices launched with Android 11 and up to have [fs-verity](https://www.kernel.org/doc/html/latest/filesystems/fsverity.html) enabled by default. fs-verity is a Linux kernel feature that is primarily used for file authentication (detection of malicious modifications) due to its extremely efficient file hash calculation. Read requests only will succeed if the content verifies against trusted digital certificates that were loaded to the kernel keyring during boot time.
 
 The v4 signature requires a complementary v2 or v3 signature and in contrast to previous signature schemes, the v4 signature is stored in a separate file `<apk name>.apk.idsig`. Remember to specify it using the `--v4-signature-file` flag when verifying a v4-signed APK with `apksigner verify`.
 
@@ -635,12 +549,12 @@ You can find more detailed information in the [Android developer documentation](
 
 #### Creating Your Certificate
 
-Android uses public/private certificates to sign Android apps (.apk files). Certificates are bundles of information; in terms of security, keys are the most important type of this information Public certificates contain users' public keys, and private certificates contain users' private keys. Public and private certificates are linked. Certificates are unique and can't be re-generated. Note that if a certificate is lost, it cannot be recovered, so updating any apps signed with that certificate becomes impossible.
+Android uses public/private certificates to sign Android apps (.apk files). Certificates are bundles of information; in terms of security, keys are the most important part of that bundle. Public certificates contain users' public keys, and private certificates contain users' private keys. Public and private certificates are linked. Certificates are unique and can't be re-generated. Note that if a certificate is lost, it cannot be recovered, so updating any apps signed with that certificate becomes impossible.
 App creators can either reuse an existing private/public key pair that is in an available KeyStore or generate a new pair.
-In the Android SDK, a new key pair is generated with the `keytool` command. The following command creates a RSA key pair with a key length of 2048 bits and an expiry time of 7300 days = 20 years. The generated key pair is stored in the file 'myKeyStore.jks', which is in the current directory):
+In the Android SDK, a new key pair is generated with the `keytool` command. The following command creates a RSA key pair with a key length of 2048 bits and an expiry time of 7300 days = 20 years. The generated key pair is stored in the file 'myKeyStore.jks', which is in the current directory:
 
 ```bash
-$ keytool -genkey -alias myDomain -keyalg RSA -keysize 2048 -validity 7300 -keystore myKeyStore.jks -storepass myStrongPassword
+keytool -genkey -alias myDomain -keyalg RSA -keysize 2048 -validity 7300 -keystore myKeyStore.jks -storepass myStrongPassword
 ```
 
 Safely storing your secret key and making sure it remains secret during its entire life cycle is of paramount importance. Anyone who gains access to the key will be able to publish updates to your apps with content that you don't control (thereby adding insecure features or accessing shared content with signature-based permissions). The trust that a user places in an app and its developers is based totally on such certificates; certificate protection and secure management are therefore vital for reputation and customer retention, and secret keys must never be shared with other individuals. Keys are stored in a binary file that can be protected with a password; such files are referred to as _KeyStores_. KeyStore passwords should be strong and known only to the key creator. For this reason, keys are usually stored on a dedicated build machine that developers have limited access to.
@@ -648,20 +562,20 @@ An Android certificate must have a validity period that's longer than that of th
 
 #### Signing an Application
 
-The goal of the signing process is to associate the app file (.apk) with the developer's public key. To achieve this, the developer calculates a hash of the APK file and encrypts it with their own private key. Third parties can then verify the app's authenticity (e.g., the fact that the app really comes from the user who claims to be the originator) by decrypting the encrypted hash with the author’s public key and verifying that it matches the actual hash of the APK file.
+The goal of the signing process is to associate the app file (.apk) with the developer's public key. To achieve this, the developer calculates a hash of the APK file and encrypts it with their own private key. Third parties can then verify the app's authenticity (e.g., the fact that the app really comes from the user who claims to be the originator) by decrypting the encrypted hash with the author's public key and verifying that it matches the actual hash of the APK file.
 
 Many Integrated Development Environments (IDE) integrate the app signing process to make it easier for the user. Be aware that some IDEs store private keys in clear text in configuration files; double-check this in case others are able to access such files and remove the information if necessary.
 Apps can be signed from the command line with the 'apksigner' tool provided by the Android SDK (API level 24 and higher). It is located at `[SDK-Path]/build-tools/[version]`. For API 24.0.2 and below, you can use 'jarsigner', which is part of the Java JDK. Details about the whole process can be found in official Android documentation; however, an example is given below to illustrate the point.
 
 ```bash
-$ apksigner sign --out mySignedApp.apk --ks myKeyStore.jks myUnsignedApp.apk
+apksigner sign --out mySignedApp.apk --ks myKeyStore.jks myUnsignedApp.apk
 ```
 
 In this example, an unsigned app ('myUnsignedApp.apk') will be signed with a private key from the developer KeyStore 'myKeyStore.jks' (located in the current directory). The app will become a signed app called 'mySignedApp.apk' and will be ready to release to stores.
 
 ##### Zipalign
 
-The `zipalign` tool should always be used to align the APK file before distribution. This tool aligns all uncompressed data (such as images, raw files, and 4-byte boundaries) within the APK that helps improve memory management during app runtime.
+The `zipalign` tool should always be used to align the APK file before distribution. This tool aligns all uncompressed data (such as images, raw files, and 4-byte boundaries) within the APK, which helps improve memory management during app runtime.
 
 > Zipalign must be used before the APK file is signed with apksigner.
 
@@ -673,24 +587,4 @@ Apps can be installed on an Android device from a variety of sources: locally vi
 
 Whereas other vendors may review and approve apps before they are actually published, Google will simply scan for known malware signatures; this minimizes the time between the beginning of the publishing process and public app availability.
 
-Publishing an app is quite straightforward; the main operation is making the signed APK file downloadable. On Google Play, publishing starts with account creation and is followed by app delivery through a dedicated interface. Details are available at [the official Android documentation](https://developer.android.com/distribute/googleplay/start.html "Review the checklists to plan your launch").
-
-## Android Application Attack Surface
-
-The Android application attack surface consists of all components of the application, including the supportive material necessary to release the app and to support its functioning. The Android application may be vulnerable to attack if it does not:
-
-- Validate all input by means of IPC communication or URL schemes, see also:
-  - [Testing for Sensitive Functionality Exposure Through IPC](0x05h-Testing-Platform-Interaction.md#testing-for-sensitive-functionality-exposure-through-ipc-mstg-platform-4 "Testing for Sensitive Functionality Exposure Through IPC")
-  - [Testing Custom URL Schemes](0x05h-Testing-Platform-Interaction.md#testing-custom-url-schemes-mstg-platform-3 "Testing Custom URL Schemes")
-- Validate all input by the user in input fields.
-- Validate the content loaded inside a WebView, see also:
-  - [Testing JavaScript Execution in WebViews](0x05h-Testing-Platform-Interaction.md#testing-javascript-execution-in-webviews-mstg-platform-5 "Testing JavaScript Execution in WebViews")
-  - [Testing WebView Protocol Handlers](0x05h-Testing-Platform-Interaction.md#testing-webview-protocol-handlers-mstg-platform-6 "Testing WebView Protocol Handlers")
-  - [Determining Whether Java Objects Are Exposed Through WebViews](0x05h-Testing-Platform-Interaction.md#determining-whether-java-objects-are-exposed-through-webviews-mstg-platform-7 "Determining Whether Java Objects Are Exposed Through WebViews")
-- Securely communicate with backend servers or is susceptible to man-in-the-middle attacks between the server and the mobile application, see also:
-  - [Testing Network Communication](0x04f-Testing-Network-Communication.md#testing-network-communication "Testing Network Communication")
-  - [Android Network APIs](0x05g-Testing-Network-Communication.md#android-network-apis "Android Network APIs")
-- Securely stores all local data, or loads untrusted data from storage, see also:
-  - [Data Storage on Android](0x05d-Testing-Data-Storage.md#data-storage-on-android "Data Storage on Android")
-- Protect itself against compromised environments, repackaging or other local attacks, see also:
-  - [Android Anti-Reversing Defenses](0x05j-Testing-Resiliency-Against-Reverse-Engineering.md#android-anti-reversing-defenses "Android Anti-Reversing Defenses")
+Publishing an app is quite straightforward; the main operation is making the signed APK file downloadable. On Google Play, publishing starts with account creation and is followed by app delivery through a dedicated interface. Details are available at [the official Android documentation](https://play.google.com/console/about/guides/releasewithconfidence/ "Review the checklists to plan your launch").

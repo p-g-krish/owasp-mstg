@@ -1,0 +1,35 @@
+{
+    "ignorePatterns": [
+        {
+            "pattern": "^https?:"
+        },
+        {
+            "pattern": "^mailto:"
+        },
+        {
+            "pattern": "^tel:"
+        },
+        {
+            "pattern": "^/MASTG/"
+        },
+        {
+            "pattern": "^/MASVS/"
+        },
+        {
+            "pattern": "^/MASWE/"
+        },
+        {
+            "pattern": "^MASTG/"
+        },
+        {
+            "pattern": "^MASVS/"
+        }
+    ],
+    "replacementPatterns": [
+        {
+            "pattern": "^Images/",
+            "replacement": "{{BASEURL}}/Document/Images/"
+        }
+    ],
+    "see": "Used by url-checker.yml and url-checker-pr.yml to validate links to files inside this repository. Only relative links are checked; all http(s) links are ignored, those are covered by url-checker.yml."
+}

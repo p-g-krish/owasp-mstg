@@ -1,0 +1,6 @@
+pyyaml
+requests
+semgrep
+frida
+frida-tools
+frooky
